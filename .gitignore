@@ -1,0 +1,7 @@
+instructor_private/
+outputs/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+student_solution.py
+results.xml

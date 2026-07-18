@@ -1,0 +1,68 @@
+name: Autograde Linear Regression Lab
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout student repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install numpy pandas matplotlib jupyter nbconvert pytest requests
+
+      - name: Fetch private hidden test set
+        # The hidden test set must NEVER live in the student's public repo.
+        # Simplest option shown here: store the CSV as base64 in a repo/org
+        # secret called HIDDEN_TEST_CSV_B64. See README.md for two other
+        # options (private grading repo, or private Kaggle dataset).
+        run: |
+          mkdir -p instructor_private
+          echo "${{ secrets.HIDDEN_TEST_CSV_B64 }}" | base64 -d > instructor_private/test_hidden.csv
+
+      - name: Convert notebook to script and execute
+        # This both defines the student's functions AND runs the training
+        # cells (which save outputs/theta.npy), since nbconvert --to script
+        # preserves top-level cell code, and importing/running it executes it.
+        env:
+          MPLBACKEND: Agg  # headless, avoids plt.show() errors in CI
+        run: |
+          mkdir -p outputs
+          jupyter nbconvert --to script student_lab_template.ipynb --output student_solution
+          python student_solution.py
+
+      - name: Run correctness tests
+        run: pytest grading/test_student_lab.py --junitxml=results.xml
+        continue-on-error: true  # so performance grading still runs even if some tests fail
+
+      - name: Run performance grading
+        run: python grading/grade_performance.py
+
+      - name: Combine scores and post PR comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python grading/combine_and_post.py
+
+      - name: Upload results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grading-results
+          path: |
+            results.xml
+            outputs/performance_result.json
